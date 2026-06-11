@@ -1,0 +1,213 @@
+<!DOCTYPE html>
+<html lang="es">
+
+<head>
+    <meta charset="UTF-8">
+    <title>GestoMed - Reconocimiento Total de Gestos</title>
+    <script src="https://cdn.jsdelivr.net/npm/@mediapipe/tasks-vision@0.10.35/tasks-vision.js" crossorigin="anonymous"></script>
+    <style>
+        body {
+            font-family: 'Segoe UI', Arial, sans-serif;
+            background: #121212;
+            color: white;
+            text-align: center;
+            margin: 0;
+            padding: 20px;
+        }
+
+        #contenedor {
+            position: relative;
+            width: 640px;
+            height: 480px;
+            margin: auto;
+            border: 4px solid #00ebff;
+            border-radius: 15px;
+            overflow: hidden;
+            box-shadow: 0 0 20px rgba(0, 235, 255, 0.2);
+        }
+
+        video,
+        canvas {
+            position: absolute;
+            left: 0;
+            top: 0;
+            transform: rotateY(180deg);
+        }
+
+        #consola {
+            width: 640px;
+            margin: 20px auto;
+            background: #1a1a1a;
+            padding: 20px;
+            border-radius: 10px;
+            box-sizing: border-box;
+            border: 1px solid #333;
+        }
+
+        #movimiento {
+            font-size: 28px;
+            color: #00ebff;
+            font-weight: bold;
+            height: 40px;
+            text-shadow: 0 0 10px rgba(0, 235, 255, 0.3);
+        }
+
+        #info-dedos {
+            color: #888;
+            font-size: 16px;
+            margin-top: 10px;
+            font-family: monospace;
+        }
+    </style>
+</head>
+
+<body>
+
+    <h2>GestoMed: Reconocimiento de Gestos Avanzado</h2>
+    <p style="color: #aaa;">Prueba: Deslizar rápido (Izq/Der/Arriba/Abajo) o cerrar el puño</p>
+
+    <div id="contenedor">
+        <video id="webcam" width="640" height="480" autoplay playsinline></video>
+        <canvas id="salida" width="640" height="480"></canvas>
+    </div>
+
+    <div id="consola">
+        <div id="movimiento">ESPERANDO MANO...</div>
+        <div id="info-dedos">Estado de dedos: -</div>
+    </div>
+
+    <script>
+        const video = document.getElementById('webcam');
+        const canvas = document.getElementById('salida');
+        const ctx = canvas.getContext('2d');
+        const txtMovimiento = document.getElementById('movimiento');
+        const txtInfo = document.getElementById('info-dedos');
+
+        let historialX = [];
+        let historialY = [];
+        const limiteHistorial = 6;
+        let cooldown = false;
+        let handLandmarker = null;
+
+        function onResults(results) {
+            ctx.clearRect(0, 0, canvas.width, canvas.height);
+
+            if (results.landmarks && results.landmarks.length > 0) {
+                const mano = results.landmarks[0];
+
+                for (let i = 0; i < mano.length; i++) {
+                    const punto = mano[i];
+                    ctx.fillStyle = i === 8 ? "#ff0055" : "#00ffaa";
+                    ctx.beginPath();
+                    ctx.arc(punto.x * canvas.width, punto.y * canvas.height, 5, 0, 2 * Math.PI);
+                    ctx.fill();
+                }
+
+                const indiceCerrado = mano[8].y > mano[6].y;
+                const medioCerrado = mano[12].y > mano[10].y;
+                const anularCerrado = mano[16].y > mano[14].y;
+                const meniqueCerrado = mano[20].y > mano[18].y;
+
+                if (indiceCerrado && medioCerrado && anularCerrado && meniqueCerrado) {
+                    txtMovimiento.innerText = "✊ PUÑO CERRADO (Acción: Agarrar/Bloquear)";
+                    txtMovimiento.style.color = "#ffcc00";
+                    txtInfo.innerText = "Todos los dedos contraídos.";
+                    historialX = [];
+                    historialY = [];
+                    return;
+                } else {
+                    txtInfo.innerText = "Mano abierta detectada.";
+                }
+
+                const xActual = mano[5].x;
+                const yActual = mano[5].y;
+
+                historialX.push(xActual);
+                historialY.push(yActual);
+
+                if (historialX.length > limiteHistorial) { historialX.shift(); historialY.shift(); }
+
+                if (historialX.length === limiteHistorial && !cooldown) {
+                    const difX = historialX[historialX.length - 1] - historialX[0];
+                    const difY = historialY[historialY.length - 1] - historialY[0];
+
+                    if (Math.abs(difX) > Math.abs(difY)) {
+                        if (difX > 0.12) mostrarAccion("👉 DESLIZADO A LA DERECHA");
+                        else if (difX < -0.12) mostrarAccion("👈 DESLIZADO A LA IZQUIERDA");
+                    } else {
+                        if (difY < -0.12) mostrarAccion("👆 MOVIMIENTO HACIA ARRIBA");
+                        else if (difY > 0.12) mostrarAccion("👇 MOVIMIENTO HACIA ABAJO");
+                    }
+                }
+            } else {
+                historialX = [];
+                historialY = [];
+                if (!cooldown) {
+                    txtMovimiento.innerText = "ESPERANDO MANO...";
+                    txtMovimiento.style.color = "#888";
+                }
+            }
+        }
+
+        function mostrarAccion(texto) {
+            txtMovimiento.innerText = texto;
+            txtMovimiento.style.color = "#00ff2b";
+            cooldown = true;
+            historialX = [];
+            historialY = [];
+
+            setTimeout(() => {
+                cooldown = false;
+            }, 1000);
+        }
+
+        async function start() {
+            try {
+                const vision = await FilesetResolver.forVisionTasks(
+                    "https://cdn.jsdelivr.net/npm/@mediapipe/tasks-vision@0.10.35/wasm"
+                );
+                handLandmarker = await HandLandmarker.createFromOptions(vision, {
+                    baseOptions: {
+                        modelAssetPath: "https://storage.googleapis.com/mediapipe-models/hand_landmarker/hand_landmarker/float16/latest/hand_landmarker.task",
+                        delegate: "CPU"
+                    },
+                    runningMode: "VIDEO",
+                    numHands: 1,
+                    minHandDetectionConfidence: 0.6,
+                    minTrackingConfidence: 0.6
+                });
+
+                const stream = await navigator.mediaDevices.getUserMedia({
+                    video: { width: 640, height: 480 }
+                });
+                video.srcObject = stream;
+
+                video.onloadedmetadata = () => {
+                    video.play().then(() => {
+                        function processFrame() {
+                            if (video.readyState >= 2 && handLandmarker) {
+                                try {
+                                    const results = handLandmarker.detectForVideo(video, performance.now());
+                                    onResults(results);
+                                } catch (err) {
+                                    console.error("Error en detección:", err);
+                                }
+                            }
+                            requestAnimationFrame(processFrame);
+                        }
+                        requestAnimationFrame(processFrame);
+                    }).catch(e => {
+                        console.error("Error en video.play():", e);
+                    });
+                };
+            } catch (err) {
+                console.error("Error iniciando:", err);
+                txtMovimiento.innerText = "ERROR: " + err.message;
+            }
+        }
+
+        start();
+    </script>
+</body>
+
+</html>

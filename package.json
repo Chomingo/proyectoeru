@@ -1,0 +1,52 @@
+{
+  "name": "gestomed",
+  "version": "1.0.0",
+  "description": "GestoMed - Interfaz sin contacto y asistencia robótica para entornos médicos",
+  "main": "main.js",
+  "scripts": {
+    "start": "electron .",
+    "dev": "electron . --dev",
+    "build": "electron-builder"
+  },
+  "keywords": [
+    "gestomed",
+    "mediapipe",
+    "electron",
+    "hand-tracking",
+    "medical"
+  ],
+  "author": "",
+  "license": "MIT",
+  "devDependencies": {
+    "electron": "^42.4.0",
+    "electron-builder": "^25.1.8"
+  },
+  "dependencies": {
+    "@mediapipe/tasks-vision": "^0.10.35",
+    "serialport": "^13.0.0"
+  },
+  "build": {
+    "appId": "com.gestomed.app",
+    "productName": "GestoMed",
+    "directories": {
+      "output": "dist"
+    },
+    "files": [
+      "main.js",
+      "preload.js",
+      "renderer/**/*",
+      "models/**/*",
+      "node_modules/**/*",
+      "package.json"
+    ],
+    "extraResources": [
+      {
+        "from": "models",
+        "to": "models"
+      }
+    ],
+    "win": {
+      "target": "nsis"
+    }
+  }
+}
